@@ -1,0 +1,695 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" /> 
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" /> 
+   
+
+  <!-- Tailwind CDN --> 
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style> 
+
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&family=Noto+Serif+TC:wght@900&display=swap');
+
+    :root { 
+      --bg-dark: #0a0a0a; 
+      --text-light: #f5f5f5; 
+      --cataract-bg: #18181b; 
+      --glaucoma-bg: #064e3b; 
+      --floater-bg: #ffffff;
+      --macula-bg: #ffd400; 
+    } 
+body {
+  font-family:'Noto Sans TC', sans-serif; 
+  /*background-color:#000;*/
+
+
+  background-image: 
+    linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)), 
+    url('./bg.jpg'); 
+  background-size:cover; 
+  background-repeat:no-repeat; 
+  background-position:center; 
+  background-attachment:scroll; 
+  color: var(--text-light); 
+  overflow-x:hidden; 
+  scroll-behavior:smooth; 
+}
+    /* --- 捲動對焦效果 --- */ 
+
+    .blur-on-scroll { 
+      transition: filter 0.6s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.6s ease-out; 
+      will-change: filter, opacity; 
+      filter: blur(10px); 
+      opacity: 0.5; 
+    } 
+
+    /* --- 體驗模擬層樣式 --- */ 
+    .sim-view { 
+      display: none; position: fixed; inset: 0; z-index: 3000; 
+      background-size: cover; background-position: center; 
+
+      background-color: #1a1a1a; cursor: pointer; overflow: hidden; 
+    } 
+
+    .diffusion-filter { 
+      position: absolute; inset: 0; 
+      display: flex; flex-direction: column; justify-content: center; align-items: center; 
+      transition: all 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+    } 
+
+    .diffuse-out { 
+      backdrop-filter: blur(100px) !important; 
+      background: rgba(255, 255, 255, 0) !important;
+
+
+      opacity: 0; transform: scale(1.8); pointer-events: none;
+    } 
+
+    /* --- 青光眼遮罩：獨立一層，才能「點一下變清晰」 --- */ 
+    .glaucoma-mask{ 
+      position:absolute; inset:0; 
+      background: radial-gradient(circle at var(--cx, 50%) var(--cy, 50%), 
+        transparent 12%, 
+        rgba(0, 15, 5, 0.98) 38%
+      ); 
+      transition: background 0.08s linear, opacity 0.4s 
+
+ease;
+    } 
+    .glaucoma-clear{ opacity: 0 !important; } 
+
+    /* --- 內容彈窗 (Modal) --- */ 
+    .modal { 
+      display: none; position: fixed; inset: 0; z-index: 2000; 
+      background: rgba(0,0,0,0.98); backdrop-filter: blur(25px); 
+      justify-content: center; align-items: center; padding: 1rem; 
+    } 
+    .modal-content { 
+
+      background: #0d0d0d; color: #fff; max-width: 1100px; width: 100%; 
+      max-height: 92vh; overflow-y: auto; border-radius: 40px; 
+      padding: 3rem; border: 1px solid #222; 
+      transform: translateY(30px); opacity: 0; transition: all 0.6s ease; 
+    } 
+    .modal-show .modal-content { transform: translateY(0); opacity: 1; } 
+
+    /* --- 背景飛蚊粒子 --- */ 
+    .floater { 
+      position: fixed; pointer-events: none; z-index: 60; 
+      background: rgba(100, 100, 100, 0.2);
+
+
+      border-radius: 45% 55% 50% 50%; 
+      filter: blur(2px); 
+      animation: drift var(--duration) infinite ease-in-out; 
+    } 
+    @keyframes drift { 
+      0%, 100% { transform: translate(0, 0); } 
+      50% { transform: translate(var(--move-x), var(--move-y)); } 
+    } 
+
+    /* --- 眼球解剖圖 SVG --- */ 
+    .anatomy-svg { width: 100%; height: auto; max-width: 550px; display: block; margin: 0 auto; }
+
+
+    .label-text { fill: #aaa; font-size: 11px; font-weight: bold; } 
+    .highlight-text { font-weight: 800; } 
+
+    /* --- 眼睛操 pupil 控制 --- */ 
+    #iris-group { transition: transform 0.1s linear; } 
+    .countdown-num { font-variant-numeric: tabular-nums; } 
+
+    /* 疾病卡片懸浮效果 */ 
+    .case-card { transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1); cursor: default; }
+    .case-card:hover { transform: translateY(-10px) scale(1.02); } 
+
+
+    #macula-filter {
+            background: radial-gradient(circle at center, rgba(20, 10, 0, 0.98) 0%, rgba(133, 77, 14, 0.6) 20%, transparent 60%);
+            backdrop-filter: blur(5px);
+
+        }
+  </style> 
+</head>
+
+<body>
+
+  <!-- 用來「強迫 Tailwind CDN 生成」動態 class（不然 template string 的 class 可能不生效） --> 
+  <div class="hidden"> 
+    <div class="text-zinc-500 text-emerald-600 text-zinc-400 bg-zinc-700 bg-emerald-900 bg-zinc-900 border-zinc-500 border-emerald-600"></div> 
+  </div> 
+
+  <!-- 白內障體驗 --> 
+
+  <div id="cataract-sim-view" class="sim-view" 
+       style="background-image: url('https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=40&w=1200');"
+       onclick="startDiffusion('cataract')"> 
+    <div id="cataract-filter" class="diffusion-filter" style="background: rgba(50, 50, 50, 0.5); backdrop-filter: blur(12px);"> 
+      <div class="text-center p-10 bg-black/40 backdrop-blur-xl rounded-[3rem] border border-white/10"> 
+        <h2 class="text-4xl md:text-6xl font-bold text-white serif-title mb-4">雲紗遮目</h2> 
+        <p class="text-white/60 tracking-[0.4em] animate-pulse">點擊螢幕，撥開視線的迷霧</p> 
+      </div> 
+
+    </div> 
+  </div> 
+
+  <!-- 青光眼體驗 --> 
+  <div id="glaucoma-sim-view" class="sim-view" 
+       style="background-image: url('https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&q=40&w=1200');"
+       onclick="startDiffusion('glaucoma')"> 
+
+    <div id="glaucoma-mask" class="glaucoma-mask"></div> 
+
+    <div id="glaucoma-filter" class="diffusion-filter" style="background: rgba(0,0,0,0.05);">
+      <div class="text-center p-8 text-white"> 
+        <h2 class="text-4xl md:text-6xl font-bold serif-title mb-4">碧影深井</h2> 
+        <p class="text-emerald-400 tracking-[0.4em] animate-pulse">移動滑鼠，感受侷限的視野</p> 
+        <p class="text-white/40 mt-6 tracking-[0.25em]">點一下變清晰，再點一下離開</p> 
+      </div> 
+    </div> 
+  </div> 
+
+  <!-- 飛蚊症體驗 --> 
+  <div id="floater-sim-view" class="sim-view" 
+
+       style="background-image: url('https://images.unsplash.com/photo-1513002749550-c59d786b8e6c?auto=format&fit=crop&q=40&w=1200');"
+       onclick="startDiffusion('floater')"> 
+    <div id="floater-filter" class="diffusion-filter" style="background: rgba(255, 255, 255, 0.05);">
+      <div class="text-center p-10 bg-white/20 backdrop-blur-xl rounded-[3rem] border border-white/30"> 
+        <h2 class="text-4xl md:text-6xl font-bold text-white serif-title mb-4">游絲隨行</h2> 
+        <p class="text-white tracking-[0.4em] animate-pulse">那些甩不掉的，正是視力的背後靈</p> 
+      </div> 
+    </div> 
+  </div>
+  <!-- 黃斑部病變體驗 --> 
+<div id="macula-sim-view" class="sim-view" style="background-image: url('https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=40&w=1200');" onclick="startDiffusion('macula')">
+        <div id="macula-filter" class="diffusion-filter">
+            <div class="text-center p-10 bg-black/40 backdrop-blur-xl rounded-[3rem] border border-white/10 shadow-2xl">
+                <h2 class="text-4xl md:text-6xl font-bold 
+
+text-white serif-title mb-4 text-yellow-200">蝕光中心</h2>
+                <p class="text-yellow-500 tracking-[0.4em] animate-pulse">視界中心正在崩解，點擊探索</p>
+            </div>
+        </div>
+    </div>
+
+
+
+  <!-- 彈窗 --> 
+  <div id="info-modal" class="modal"> 
+    <div id="modal-body" class="modal-content"></div> 
+  </div> 
+
+  <!-- 1. 首頁 --> 
+   <section class="min-h-screen flex flex-col justify-center items-center relative p-6 text-center"> 
+  <div class="z-10 blur-on-scroll" id="hero-title"> 
+
+    <!-- 流視主視覺圖 --> 
+
+    <img 
+      src="./tt.png" 
+      alt="流視" 
+      class="mx-auto w-[320px] md:w-[500px] lg:w-[700px] mb-10 select-none pointer-events-none" 
+    /> 
+
+    <!-- FLOWING VISION --> 
+    <p class="text-lg md:text-2xl text-gray-400 tracking-[0.4em] font-light uppercase"> 
+      FLOWING VISION  
+    </p> 
+
+    <!-- 標語 -->
+
+
+    <p class="mt-6 text-base md:text-lg text-white/55 tracking-[0.25em]"> 
+      一場視覺狀態的試鏡體驗 
+    </p> 
+
+  </div> 
+
+  <div class="absolute bottom-12 flex flex-col items-center opacity-30"> 
+    <div class="w-px h-20 bg-gradient-to-b from-white to-transparent"></div> 
+  </div> 
+</section>
+
+
+
+  <!-- 2. 核心內容 --> 
+  <section class="max-w-6xl mx-auto px-6 py-32 space-y-48"> 
+    <div class="blur-on-scroll py-10"> 
+      <h2 class="text-5xl md:text-7xl font-bold mb-8 serif-title leading-tight text-white text-left"> 
+        視力，<br>不應如水流逝。 
+      </h2> 
+      <p class="text-lg md:text-xl leading-relaxed text-gray-500 max-w-xl text-left"> 
+        當水晶體不再透明，當視野逐漸被陰影吞噬，我們才開始懷念那一抹湛藍。這是一場關於看見與失去的對應。 
+      </p>
+
+
+    </div> 
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-left">
+
+            <!-- 01: 飛蚊症 -->
+            <div class="blur-on-scroll case-card p-10 rounded-[3rem] flex flex-col shadow-2xl" style="background-color: var(--floater-bg);">
+                <span class="text-zinc-400 font-mono text-xs tracking-widest uppercase font-bold mb-2">Case 01 / Debris</span>
+                <h3 class="text-2xl font-bold mb-6 text-black text-left">飛蚊症</h3>
+                <p class="text-zinc-600 mb-10 text-sm leading-relaxed text-left">「游絲」隨行。惱人的黑點、絲線在視野中飄蕩，揮之不去。</p>
+                <button onclick="openSimulation('floater')" class="mt-auto py-4 bg-zinc-900 text-white font-bold rounded-2xl hover:bg-zinc-700 transition-colors">進入體驗</button>
+            </div>
+            <!-- 02: 白內障 -->
+            <div class="blur-on-scroll case-card p-10 rounded-[3rem] flex flex-col border border-white/5 shadow-2xl" style="background-color: var(--cataract-bg);">
+                <span class="text-zinc-500 font-mono text-xs tracking-widest uppercase font-bold mb-2">Case 02 / Clouding</span>
+                <h3 class="text-2xl font-bold mb-6 text-white text-left">白內障</h3>
+                <p class="text-zinc-400 mb-10 text-sm leading-relaxed text-left">「雲紗」遮目。看世界隔著一層髒汙，色彩變得渾濁泛黃。</p>
+                <button onclick="openSimulation('cataract')" class="mt-auto py-4 bg-zinc-700 text-white font-bold rounded-2xl hover:bg-zinc-600 transition-colors">進入體驗</button>
+            </div>
+            <!-- 03: 青光眼 -->
+            <div class="blur-on-scroll case-card p-10 rounded-[3rem] flex flex-col border border-white/5 shadow-2xl" style="background-color: var(--glaucoma-bg);">
+
+                <span class="text-emerald-500/60 font-mono text-xs tracking-widest uppercase font-bold mb-2">Case 03 / Pressure</span>
+                <h3 class="text-2xl font-bold mb-6 text-white text-left">青光眼</h3>
+                <p class="text-emerald-100/60 mb-10 text-sm leading-relaxed text-left">「碧影」深井。視野周邊逐漸被無聲吞噬，只剩下中央的孤島。</p>
+                <button onclick="openSimulation('glaucoma')" class="mt-auto py-4 bg-emerald-900 text-white font-bold rounded-2xl hover:bg-emerald-800 transition-colors border border-white/10">進入體驗</button>
+            </div>
+            <!-- 04: 黃斑部病變 (優化後金黃色系) -->
+            <div class="blur-on-scroll case-card p-10 rounded-[3rem] flex flex-col border border-white/5 shadow-2xl" style="background-color:var(--macula-bg);">
+                <span class="text-yellow-500/60 font-mono text-xs tracking-widest uppercase font-bold mb-2">Case 04 / Macula</span>
+                <h3 class="text-2xl font-bold mb-6 text-[#baa300] text-left">黃斑部病變</h3>
+                <p class="text-[#baa300] mb-10 text-sm leading-relaxed text-left">「蝕光」中心。視覺中心出現扭曲、黑影，直線看成了曲線。</p>
+
+                <button onclick="openSimulation('macula')" class="mt-auto py-4 bg-yellow-700 text-white font-bold rounded-2xl hover:bg-yellow-600 transition-colors border border-white/5">進入體驗</button>
+            </div>
+        </div>
+  </section> 
+
+
+  <!-- 3. 眼睛操 --> 
+  <section class="py-40 border-t border-white/5 text-center"> 
+    <div class="max-w-4xl mx-auto px-6"> 
+      <div class="blur-on-scroll mb-20"> 
+        <h2 class="text-4xl md:text-6xl font-bold serif-title mb-10 text-white">珍惜，每一分清澈。</h2> 
+        <div class="max-w-2xl mx-auto text-gray-400 space-y-6"> 
+          <p class="text-lg leading-loose text-white/80"> 
+            在這個數位時代，我們的睫狀肌常因長時間專注於近距離螢幕，而處於高度緊張狀態。 
+          </p> 
+          <!-- 修正：你原本的 <p clas> 是錯的 --> 
+
+          <p class="text-sm font-light leading-relaxed opacity-60"> 
+            這套眼睛操旨在透過視線引導，放鬆長期僵硬的眼部肌肉。請放慢呼吸，讓雙眼跟隨球體移動。 
+          </p> 
+        </div> 
+      </div> 
+
+      <div class="max-w-2xl mx-auto p-12 bg-white/5 rounded-[4rem] border border-white/10 shadow-2xl mb-24 text-center blur-on-scroll"> 
+        <div id="eye-exercise-container" class="flex flex-col items-center"> 
+          <div id="exercise-countdown" class="text-6xl font-bold text-orange-500 mb-6 opacity-0 countdown-num transition-opacity duration-300">0</div>
+
+
+
+          <svg width="180" height="180" viewBox="0 0 200 200" class="mb-10">
+            <circle cx="100" cy="100" r="85" fill="white" /> 
+            <g id="iris-group"> 
+              <circle cx="100" cy="100" r="38" fill="#1a1a1a" /> 
+              <circle cx="100" cy="100" r="16" fill="black" /> 
+              <circle cx="112" cy="88" r="7" fill="white" opacity="0.3" /> 
+            </g> 
+            <circle cx="100" cy="100" r="85" fill="none" stroke="#333" stroke-width="2" /> 
+          </svg>
+
+
+
+          <h3 id="exercise-step-title" class="text-xl font-bold mb-8 text-white uppercase tracking-widest font-mono">Vision Practice</h3> 
+          <button id="start-exercise-btn" onclick="runEyeExercise()" 
+                  class="bg-white text-black px-12 py-4 rounded-full font-bold text-lg hover:bg-orange-500 hover:text-white transition-all transform hover:scale-105"> 
+            開始練習 
+          </button> 
+        </div> 
+      </div> 
+    </div> 
+
+  </section> 
+
+  <footer class="py-24 border-t border-white/5 text-center opacity-20 uppercase tracking-[0.4em]"> 
+    <p class="text-gray-600 text-[10px]">2026 WATCH OUT / 流視</p> 
+  </footer> 
+
+  <script> 
+    /* --- 音效 --- */ 
+    const sfxDing = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    sfxDing.volume = 1.0; 
+
+
+    /* --- 病理資料 --- */ 
+    const diseaseData = { 
+      cataract: { 
+        accent: "zinc-500", 
+        btnColor: "bg-zinc-700", 
+        title: "雲紗：白內障", 
+        pathoDesc: "原本清澈透明的水晶體因老化、紫外線照射導致蛋白質發生變性與鈣化。視覺表現為全域性的模糊、對比度大幅下降，且伴隨色覺偏黃的偏移。", 
+        desc: "世界並未消失，只是被輕柔地遮蓋住了。", 
+        risk: ["高齡族群 (老化)", "長期曝曬紫外線", "糖尿病患者"], 
+        prevention: ["配戴抗 UV 太陽眼鏡", "定期追蹤眼底狀況", "均衡攝取抗氧化營養"]
+      }, 
+      glaucoma: { 
+        accent: "emerald-600", 
+        btnColor: "bg-emerald-900", 
+        title: "碧影：青光眼", 
+        pathoDesc: "眼球內部房水排出受阻導致眼內壓力升高，直接壓迫並損傷視神經。視野會從周邊向中心逐漸萎縮，如同透過一根狹窄的吸管看世界。", 
+        desc: "你會常撞到桌角、或看不見側方來車，而你甚至在失明前不曾察覺。", 
+        risk: ["眼壓過高者", "高度近視族群", "有青光眼家族史"], 
+        prevention: ["40歲後每年測量眼壓", "維持規律生活與良好情緒", "避免黑暗環境長時間用眼"] 
+
+      }, 
+      floater: { 
+        accent: "zinc-400", 
+        btnColor: "bg-zinc-900", 
+        title: "游絲：飛蚊症", 
+        pathoDesc: "眼球內部的玻璃體隨老化發生液化與纖維結塊。這些雜質在強光下會將影子投影至視網膜，形成隨視線飄動的黑點、絲網或網狀影跡。", 
+        desc: "若數量突然劇增，可能是視網膜剝離的警訊。", 
+        risk: ["中高度近視患者", "曾有眼球受外傷史", "玻璃體自然生理液化"], 
+        prevention: ["減少長時間專注螢幕", "適度休息讓眼睛對焦遠處", "出現閃光感應立即就醫"] 
+      },
+        macula: {
+            accent: "yellow-500", btnStyle: "bg-yellow-800", title: "蝕光：黃斑部病變",
+            pathoDesc: "視網膜中心的「黃斑部」發生變性、滲水或出血，導致感光細胞受損。患者在看東西時，中心視界會變得扭曲、變黑或模糊，直線看成了曲線。",
+            desc: "「我看得到你的手腳，卻看不清楚你的臉。」這是黃斑部病變患者最無助的日常感官。",
+            risk: ["高齡族群 (核心病因)", "高度近視患者", "長期吸菸或強光照射"],
+            prevention: ["補充葉黃素與玉米黃素", "戒菸並控制血壓", "出門遮陽減少強光直射"]
+        }
+
+    }; 
+
+    /* --- 解剖圖 --- */ 
+    const getCircularEyeAnatomy = (overlay = '') => ` 
+      <svg class="anatomy-svg" viewBox="0 0 320 280">
+        <defs> 
+          <radialGradient id="ballGrad" cx="35%" cy="35%" r="65%"> 
+            <stop offset="0%" stop-color="#3a3a3a" /> 
+            <stop offset="100%" stop-color="#050505" /> 
+          </radialGradient> 
+        </defs> 
+        <circle cx="160" cy="140" r="115" 
+
+fill="url(#ballGrad)" stroke="#555" stroke-width="5" />
+        <path d="M54,100 Q15,140 54,180" fill="none" stroke="#fff" stroke-width="6" opacity="0.5"/>
+        <path d="M68,112 L82,122 M68,168 L82,158" stroke="#666" stroke-width="12" stroke-linecap="round"/>
+        <path d="M265,130 L315,115 L315,165 L265,150 Z" fill="#222" stroke="#555" stroke-width="4"/>
+        <text x="30" y="70" class="label-text">角膜 CORNEA</text> 
+        <text x="270" y="195" class="label-text">視神經 NERVE</text> 
+        <text x="140" y="275" class="label-text">鞏膜 SCLERA</text> 
+        ${overlay} 
+
+      </svg> 
+    `; 
+
+    // ✅ 修正：這裡原本你會語法錯誤（floater 那段沒包起來） 
+    const anatomyOverlays = { 
+      cataract: ` 
+        <ellipse cx="92" cy="140" rx="18" ry="40" fill="rgba(80,80,80,0.6)" stroke="#fff" stroke-width="2" /> 
+        <circle cx="92" cy="140" r="14" fill="#555" opacity="0.6"> 
+          <animate attributeName="opacity" values="0.4;0.9;0.4" dur="2.5s" repeatCount="indefinite" /> 
+        </circle>
+
+
+        <text x="115" y="90" class="label-text highlight-text" fill="#aaa">水晶體蛋白質變性</text> 
+      `, 
+      glaucoma: ` 
+        <path d="M65,120 Q85,140 65,160" fill="none" stroke="#064e3b" stroke-width="9">
+          <animate attributeName="stroke-opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite" />
+        </path> 
+        <text x="210" y="225" class="label-text highlight-text" fill="#064e3b">視神經受壓損傷</text> 
+      `, 
+      floater: ` 
+        <path d="M135,115 Q145,125 140,135" 
+
+fill="none" stroke="#fff" stroke-width="4.5" opacity="0.7"/>
+        <text x="170" y="245" class="label-text highlight-text" fill="#fff">視網膜投影影跡</text> 
+      ` 
+      ,macula: `<circle cx="215" cy="140" r="10" fill="#fbbf24" opacity="0.9"><animate attributeName="opacity" values="0.4;1;0.4" dur="1.5s" repeatCount="indefinite" /></circle><text x="160" y="90" class="label-text highlight-text" fill="#fbbf24">黃斑部受損出血</text>`
+    }; 
+
+    /* --- 全域捲動對焦演算法 --- */ 
+    function updateScrollBlur() { 
+      const elements = document.querySelectorAll('.blur-on-scroll'); 
+      const center = window.innerHeight / 2; 
+      elements.forEach(el => { 
+        const rect = el.getBoundingClientRect(); 
+
+        const elCenter = rect.top + (rect.height / 2); 
+        const distance = Math.abs(center - elCenter); 
+        const focusZone = window.innerHeight * 0.25;
+
+        let blurVal = 0, opacityVal = 1; 
+        if (distance > focusZone) { 
+          blurVal = Math.min((distance - focusZone) / 12, 25);
+          opacityVal = Math.max(1 - (distance - focusZone) / 500, 0.45);
+        } 
+        el.style.filter = `blur(${blurVal}px)`; 
+        el.style.opacity = opacityVal; 
+      });
+
+
+    } 
+    window.addEventListener('scroll', updateScrollBlur); 
+    window.addEventListener('load', updateScrollBlur); 
+
+    /* --- 模擬與彈窗邏輯 --- */ 
+    function openSimulation(type) { 
+      const view = document.getElementById(`${type}-sim-view`); 
+      if (!view) return; 
+
+      view.style.display = 'block'; 
+      document.body.style.overflow = 'hidden'; 
+
+
+      // reset 青光眼狀態 
+      if (type === 'glaucoma') { 
+        view.dataset.state = ''; 
+        const mask = document.getElementById('glaucoma-mask'); 
+        const filter = document.getElementById('glaucoma-filter'); 
+        if (mask) mask.classList.remove('glaucoma-clear'); 
+        if (filter) filter.classList.remove('diffuse-out'); 
+      } 
+      if (type === 'glaucoma') { 
+        view.dataset.state = ''; 
+        const mask = document.getElementById('glaucoma-mask'); 
+        const filter = document.getElementById('glaucoma-filter'); 
+        if (mask) mask.classList.remove('glaucoma-clear'); 
+        if (filter) filter.classList.remove('diffuse-out'); 
+      } 
+
+      if (type === 'floater') createSimParticles(); 
+
+    } 
+
+    // ✅ 修正：青光眼點一下清晰、再點一下退出＋跳資訊 
+      function startDiffusion(type) {
+          const filter = document.getElementById(`${type}-filter`);
+          filter.classList.add('diffuse-out');
+          setTimeout(() => {
+              document.getElementById(`${type}-sim-view`).style.display = 'none';
+
+              filter.classList.remove('diffuse-out');
+              showInfo(type);
+         }, 1200);
+      }
+
+    function reExperience(type) { 
+      closeModal(); 
+      setTimeout(() => { openSimulation(type); }, 350); 
+    } 
+
+
+    function showInfo(type) { 
+      const data = diseaseData[type]; 
+      const modal = document.getElementById('info-modal'); 
+      const body = document.getElementById('modal-body'); 
+
+      body.innerHTML = ` 
+        <div class="flex justify-between items-start mb-8 text-left"> 
+          <div> 
+            <span class="text-${data.accent} font-bold text-[10px] tracking-[0.4em] uppercase font-mono">Detailed Analysis</span> 
+            <h2 class="text-4xl font-bold serif-title mt-1 text-${data.accent}">${data.title}</h2>
+
+
+          </div> 
+          <button onclick="closeModal()" class="text-gray-500 hover:text-white text-5xl font-light leading-none">&times;</button> 
+        </div> 
+
+        <div class="space-y-12"> 
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center bg-white/[0.02] p-8 rounded-[3.5rem] border border-white/5 shadow-2xl text-left">
+            <div class="bg-black/60 p-4 rounded-[2.5rem] border border-white/5 shadow-inner"> 
+              ${getCircularEyeAnatomy(anatomyOverlays[type] || '')} 
+            </div> 
+
+            <div class="space-y-5 px-2 text-left"> 
+              <h4 class="text-xl font-bold text-white border-l-4 border-${data.accent} pl-4 uppercase tracking-widest">病理構造分析</h4> 
+              <p class="text-[15px] leading-relaxed text-gray-400 font-light">${data.pathoDesc}</p> 
+            </div> 
+          </div> 
+
+          <p class="text-[20px] leading-relaxed font-light text-gray-300 italic border-l-2 border-white/10 pl-8 ml-2"> 
+            「${data.desc}」 
+          </p> 
+
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4"> 
+            <div class="bg-zinc-900/40 p-10 rounded-[3.5rem] border border-white/5 text-left"> 
+              <h4 class="text-white font-bold mb-6 text-base tracking-[0.2em]">高風險族群</h4> 
+              <ul class="space-y-3 text-gray-400 text-sm font-light"> 
+                ${data.risk.map(r => `<li class="flex items-center"><span class="w-1.5 h-1.5 bg-${data.accent} rounded-full mr-4"></span>${r}</li>`).join('')} 
+              </ul> 
+            </div> 
+
+            <div class="bg-white p-10 rounded-[3.5rem] text-black text-left"> 
+
+              <h4 class="font-bold mb-6 text-base tracking-[0.2em]">守護建議</h4> 
+              <ul class="space-y-3 font-bold text-sm"> 
+                ${data.prevention.map(p => `<li>✅ ${p}</li>`).join('')} 
+              </ul> 
+            </div> 
+          </div> 
+
+          <div class="flex justify-center pt-10 border-t border-white/10 mt-8 pb-4"> 
+            <button onclick="reExperience('${type}')" class="px-12 py-4 ${data.btnColor} text-white font-bold rounded-full hover:scale-105 transition transform flex items-center space-x-3 shadow-2xl"> 
+              <span>再體驗一次</span>
+
+
+            </button> 
+          </div> 
+        </div> 
+      `; 
+
+      modal.style.display = 'flex'; 
+      setTimeout(() => modal.classList.add('modal-show'), 50); 
+    } 
+
+    function closeModal() { 
+      const modal = document.getElementById('info-modal'); 
+
+      modal.classList.remove('modal-show'); 
+      setTimeout(() => { 
+        modal.style.display = 'none'; 
+        document.body.style.overflow = 'auto'; 
+      }, 600); 
+    } 
+
+    /* --- 青光眼遮罩跟著滑鼠 --- */ 
+    window.addEventListener('mousemove', (e) => {
+            const x = (e.clientX / window.innerWidth) * 100;
+
+            const y = (e.clientY / window.innerHeight) * 100;
+            
+            const gf = document.getElementById('glaucoma-filter');
+            if(gf && document.getElementById('glaucoma-sim-view').style.display === 'block') {
+                gf.style.background = `radial-gradient(circle at ${x}% ${y}%, transparent 12%, rgba(0, 15, 5, 0.98) 38%)`;
+            }
+            
+            const mf = document.getElementById('macula-filter');
+            if(mf && document.getElementById('macula-sim-view').style.display === 'block') {
+                // 優化後的黃斑部濾鏡跟隨
+                mf.style.background = `radial-gradient(circle at ${x}% ${y}%, rgba(20, 10, 0, 0.98) 0%, rgba(133, 77, 14, 0.6) 20%, transparent 60%)`;
+            }
+        });
+
+    /* --- 眼睛操 --- */ 
+    async function runEyeExercise() { 
+      const iris = document.getElementById('iris-group');
+
+
+      const title = document.getElementById('exercise-step-title'); 
+      const countdown = document.getElementById('exercise-countdown'); 
+      const btn = document.getElementById('start-exercise-btn'); 
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms)); 
+
+      btn.style.display = 'none'; 
+      countdown.style.opacity = '1'; 
+
+      const steps = [ 
+        { t: "LOOK UP (向上看)", x: 0, y: -45, ms: 5000 }, 
+
+        { t: "LOOK DOWN (向下看)", x: 0, y: 45, ms: 5000 }, 
+        { t: "LOOK LEFT (向左看)", x: -55, y: 0, ms: 5000 }, 
+        { t: "LOOK RIGHT (向右看)", x: 55, y: 0, ms: 5000 }, 
+        { t: "ROTATE (順時針旋轉)", rotate: true, dir: 1, ms: 10000 }, 
+        { t: "REVERSE (逆時針旋轉)", rotate: true, dir: -1, ms: 10000 }, 
+        { t: "REST (閉目放鬆)", x: 0, y: 0, ms: 5000 } 
+      ]; 
+
+      for (const s of steps) { 
+        title.innerText = s.t; 
+        sfxDing.currentTime = 0;
+
+
+        sfxDing.play(); 
+
+        const stepStart = Date.now(); 
+        while (Date.now() - stepStart < s.ms) {
+          const elapsed = Date.now() - stepStart; 
+          const remaining = Math.ceil((s.ms - elapsed) / 1000); 
+          countdown.innerText = remaining; 
+
+          if (s.rotate) { 
+            const angle = (elapsed / 1000) * 360 * 0.5 * s.dir; 
+            const rad = angle * Math.PI / 180; 
+
+            iris.setAttribute('transform', `translate(${Math.cos(rad) * 45}, ${Math.sin(rad) * 45})`); 
+          } else { 
+            iris.setAttribute('transform', `translate(${s.x}, ${s.y})`); 
+          } 
+
+          await sleep(16); 
+        } 
+      } 
+
+      countdown.style.opacity = '0'; 
+      title.innerText = "EXERCISE COMPLETE"; 
+      btn.innerText = "RESET";
+
+
+      btn.style.display = "inline-block"; 
+      iris.setAttribute('transform', `translate(0, 0)`); 
+    } 
+
+    /* --- 飛蚊症粒子 --- */ 
+    function createSimParticles() { 
+      const container = document.getElementById('floater-filter'); 
+      if (!container) return; 
+
+      container.querySelectorAll('.sim-particle').forEach(p => p.remove()); 
+      for (let i = 0; i < 20; i++) { 
+
+        const p = document.createElement('div'); 
+        p.className = 'sim-particle absolute opacity-25 pointer-events-none blur-[1px]'; 
+        p.textContent = Math.random() > 0.5 ? '〰️' : '·'; 
+        p.style.fontSize = `${Math.random()*45+15}px`; 
+        p.style.left = `${Math.random()*100}%`; 
+        p.style.top = `${Math.random()*100}%`; 
+        container.appendChild(p); 
+      } 
+    } 
+
+    /* --- 背景浮游粒子 --- */ 
+    function initBgFloaters() { 
+
+      for (let i = 0; i < 6; i++) { 
+        const f = document.createElement('div'); 
+        f.className = 'floater'; 
+        f.style.width = f.style.height = `${Math.random()*10+5}px`; 
+        f.style.top = `${Math.random()*100}%`; 
+        f.style.left = `${Math.random()*100}%`; 
+        f.style.setProperty('--duration', `${Math.random()*7+12}s`); 
+        f.style.setProperty('--move-x', `${(Math.random()-0.5)*350}px`); 
+        f.style.setProperty('--move-y', `${(Math.random()-0.5)*350}px`); 
+        document.body.appendChild(f); 
+      }
+
+
+    } 
+    initBgFloaters(); 
+  </script> 
+</body>
+</html>
